@@ -1,0 +1,408 @@
+apiVersion: v3.1.0
+kind: DataContract
+
+id: electroniz_product_golden_record_customers
+name: Electroniz Golden Record Customers — Data Product Contract
+version: 1.0.0
+status: active
+
+description:
+  purpose: >
+    Provides a PII-masked, analyst-safe unified customer data product derived from
+    Electroniz's golden record pipeline. All sensitive PII columns (phone, address,
+    credit_card, email) are present but masked using standardised redaction patterns,
+    making this product safe for sharing across analytics, marketing, and CRM consumers
+    who require customer identity data without exposure to raw personal identifiers.
+
+  usage: >
+    Used as the primary customer data product for downstream analytics, dashboards,
+    and CRM integrations where direct PII access is not required or permitted.
+    Consumers should use this data product instead of the upstream golden record
+    materialized view.
+
+  limitations: >
+    - phone is masked to last 4 digits only (format: ***-***-XXXX)
+    - email exposes only the email domain (format: *** @domain.com)
+    - credit_card is masked to last 4 digits only (format: ****-****-****-XXXX)
+    - address exposes only the street suffix component extracted from the resolved address
+    - represents survived (best) attributes per cluster and not raw source records
+    - freshness depends on the upstream materialized view refresh cadence
+
+  customProperties:
+    - property: sensitivity
+      value: internal
+      description: >
+        PII values are masked and suitable for broad internal analytics usage.
+
+    - property: derivedFrom
+      value: electroniz_catalog.electroniz_gold_master_schema.mvw_electroniz_gold_golden_record_customers
+      description: >
+        Source materialized view from which this data product is derived.
+
+    - property: piiStatus
+      value: pii_masked
+      description: >
+        email, phone, address, and credit_card are masked before publication.
+
+authoritativeDefinitions:
+  - url: "https://entropy-data.com/policies/gdpr-compliance"
+    type: businessDefinition
+    description: >
+      GDPR compliance reference for masked PII handling standards.
+
+schema:
+
+  - name: electroniz_product_golden_record_customers
+    physicalType: TABLE
+
+    description: >
+      PII-masked unified customer data product derived from the golden record
+      materialized view. Each row represents one resolved customer entity.
+
+      Survivorship rules inherited from upstream MDM pipeline:
+
+      Rule 1:
+      customer_name → longest non-null name, then most recently updated
+
+      Rule 2:
+      email → preferred domain ranking, then most recently updated
+
+      Rule 3:
+      phone → best formatting quality score, then highest digit count,
+      then most recently updated
+
+      Rule 4:
+      address → longest non-null expanded address, then most recently updated
+
+      Rule 5:
+      postal_code → longest non-null/non-blank postal code,
+      then most recently updated
+
+      Rule 6:
+      credit_card → most recently updated non-null value
+
+      Rule 7:
+      customer_id → deterministic MD5 hash of cluster_id prefixed with GR-
+
+    properties:
+
+      - name: customer_id
+        logicalType: string
+        physicalType: STRING
+        businessName: Customer ID
+        primaryKey: true
+        required: true
+        unique: true
+        classification: internal
+
+        description: >
+          Unique identifier assigned to the unified customer entity.
+          Deterministically generated from cluster_id in the upstream MDM pipeline.
+
+        examples:
+          - "GR-a1b2c3d4e5f6"
+          - "GR-f7e8d9c0b1a2"
+
+      - name: customer_name
+        logicalType: string
+        physicalType: STRING
+        businessName: Customer Name
+        required: false
+        classification: internal
+        criticalDataElement: true
+
+        description: >
+          Resolved customer name selected using survivorship logic from the
+          upstream golden record pipeline.
+
+        examples:
+          - "Dr. Jane Smith Jr."
+          - "Robert A. Johnson"
+
+      - name: email
+        logicalType: string
+        physicalType: STRING
+        businessName: Masked Email
+        required: false
+        classification: pii_masked
+
+        piiMaskingPattern: "*** @<domain>"
+
+        description: >
+          Masked preferred email address exposing only the domain component.
+
+          Masking logic:
+          CONCAT('*** ', SUBSTRING(preferred_email, INSTR(preferred_email, '@')))
+
+        examples:
+          - "*** @gmail.com"
+          - "*** @yahoo.com"
+
+      - name: phone
+        logicalType: string
+        physicalType: STRING
+        businessName: Masked Phone
+        required: false
+        classification: pii_masked
+
+        piiMaskingPattern: "***-***-<last4digits>"
+
+        description: >
+          Masked phone number exposing only the final four digits.
+
+          Masking logic:
+          CONCAT('***-***-', RIGHT(phone, 4))
+
+        examples:
+          - "***-***-1234"
+          - "***-***-9876"
+
+      - name: postal_code
+        logicalType: string
+        physicalType: STRING
+        businessName: Postal Code
+        required: false
+        classification: internal
+
+        description: >
+          Resolved postal code selected using survivorship rules from the
+          upstream MDM process.
+
+        examples:
+          - "10001-1234"
+          - "SW1A 1AA"
+
+      - name: address
+        logicalType: string
+        physicalType: STRING
+        businessName: Masked Address
+        required: false
+        classification: pii_masked
+
+        description: >
+          Partially masked address exposing only the extracted street suffix.
+
+          Masking logic:
+          CONCAT('*** ', TRIM(REGEXP_EXTRACT(
+          resolved_address,
+          '(Avenue|Road|Street|Ave)\\.?\\s*$',
+          1
+          )))
+
+        examples:
+          - "*** Avenue"
+          - "*** Road"
+
+      - name: credit_card
+        logicalType: string
+        physicalType: STRING
+        businessName: Masked Credit Card
+        required: false
+        classification: pii_masked
+
+        piiMaskingPattern: "****-****-****-<last4digits>"
+
+        description: >
+          Masked credit card value exposing only the last four digits.
+
+          Masking logic:
+          CONCAT('****-****-****-', RIGHT(credit_card, 4))
+
+        examples:
+          - "****-****-****-5678"
+          - "****-****-****-1234"
+
+      - name: classification
+        logicalType: string
+        physicalType: STRING
+        businessName: Classification
+        required: true
+        classification: internal
+
+        description: >
+          Static classification column assigned during product creation.
+
+          Current value:
+          INTERNAL
+
+          This field represents the intended internal usage scope of the
+          published data product.
+
+        examples:
+          - "INTERNAL"
+
+      - name: updated_at
+        logicalType: timestamp
+        physicalType: TIMESTAMP
+        businessName: Updated Timestamp
+        required: false
+        classification: internal
+
+        description: >
+          Timestamp representing when the data product row was generated
+          during table refresh execution.
+
+        examples:
+          - "2025-05-08T10:30:00Z"
+
+    quality:
+
+      - type: sql
+        description: customer_id must be unique
+        query: >
+          SELECT COUNT(*) AS invalid_count
+          FROM (
+            SELECT customer_id
+            FROM electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+            GROUP BY customer_id
+            HAVING COUNT(*) > 1
+          ) t
+
+        mustBe: 0
+
+      - type: sql
+        description: email must remain masked
+        query: >
+          SELECT COUNT(*) AS invalid_count
+          FROM electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+          WHERE email NOT LIKE '*** @%'
+
+        mustBe: 0
+
+      - type: sql
+        description: phone must remain masked
+        query: >
+          SELECT COUNT(*) AS invalid_count
+          FROM electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+          WHERE phone NOT LIKE '***-***-%'
+
+        mustBe: 0
+
+      - type: sql
+        description: credit_card must remain masked
+        query: >
+          SELECT COUNT(*) AS invalid_count
+          FROM electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+          WHERE credit_card NOT LIKE '****-****-****-%'
+
+        mustBe: 0
+
+      - type: sql
+        description: address must remain masked
+        query: >
+          SELECT COUNT(*) AS invalid_count
+          FROM electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+          WHERE address NOT LIKE '*** %'
+
+        mustBe: 0
+
+      - type: sql
+        description: classification must always be INTERNAL
+        query: >
+          SELECT COUNT(*) AS invalid_count
+          FROM electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+          WHERE classification <> 'INTERNAL'
+
+        mustBe: 0
+
+      - type: sql
+        description: >
+          row count must match upstream golden record materialized view because
+          this product performs masking and projection only
+
+        query: >
+          SELECT ABS(
+            (
+              SELECT COUNT(*)
+              FROM electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+            )
+            -
+            (
+              SELECT COUNT(*)
+              FROM electroniz_catalog.electroniz_gold_master_schema.mvw_electroniz_gold_golden_record_customers
+            )
+          ) AS row_difference
+
+        mustBe: 0
+
+servers:
+
+  - server: production
+    environment: prod
+    type: databricks
+
+    catalog: electroniz_catalog
+    schema: electroniz_data_products_schema
+
+    jdbcUrl: "<ADD_JDBC_URL_HERE>"
+
+team:
+
+  - username: data.owner@electroniz.com
+    name: Data Owner
+    role: dataOwner
+    description: >
+      Accountable for governance, lifecycle management,
+      and approval of contract-level changes.
+
+  - username: data.steward@electroniz.com
+    name: Data Steward
+    role: dataSteward
+    description: >
+      Responsible for metadata quality, contract validation,
+      and consumer coordination.
+
+  - username: data.engineering@electroniz.com
+    name: Data Engineering Team
+    role: dataCustodian
+    description: >
+      Responsible for implementation, deployment,
+      storage, operational reliability,
+      and refresh management.
+
+slaProperties:
+
+  - property: availability
+    value: 99.9%
+    description: >
+      Availability inherited from Databricks platform SLA.
+
+  - property: freshness
+    value: "5"
+    unit: minutes
+    description: >
+      Data freshness depends on upstream materialized view refresh cadence.
+
+  - property: retention
+    value: "2"
+    unit: years
+    description: >
+      Retention inherited from upstream golden record storage policy.
+
+tags:
+  - golden-record
+  - customers
+  - pii-masked
+  - mdm
+  - databricks
+  - data-product
+  - electroniz
+
+customProperties:
+
+  - property: sourceTable
+    value: electroniz_catalog.electroniz_gold_master_schema.mvw_electroniz_gold_golden_record_customers
+
+  - property: targetTable
+    value: electroniz_catalog.electroniz_data_products_schema.electroniz_product_golden_record_customers
+
+  - property: objectType
+    value: TABLE
+
+  - property: piiColumnsMasked
+    value: email, phone, address, credit_card
+
+  - property: upstreamPipeline
+    value: electroniz_gold_customer_mdm_pipeline
+
+contractCreatedTs: "2025-05-07T00:00:00Z"
