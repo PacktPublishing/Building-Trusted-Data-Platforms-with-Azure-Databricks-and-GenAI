@@ -334,7 +334,7 @@ servers:
     catalog: electroniz_catalog
     schema: electroniz_data_products_schema
 
-    jdbcUrl: "<ADD_JDBC_URL_HERE>"
+    jdbcUrl: "jdbc:databricks://<DATABRICKS_URL>:443/default;transportMode=http;ssl=1;AuthMech=3;httpPath=/sql/1.0/warehouses/d7641937c31b2a8b;"
 
 team:
 
