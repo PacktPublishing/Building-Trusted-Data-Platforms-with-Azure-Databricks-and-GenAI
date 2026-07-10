@@ -1,2 +1,2 @@
 # Data-Engineering-with-Apache-Spark-Databricks-and-Lakehouse-Second-Edition
-Data Engineering with Apache Spark, Databricks, and Lakehouse, Second Edition, published by Packt
+Building Trusted Data Platforms with Azure Databricks and GenAI, Second Edition, published by Packt
